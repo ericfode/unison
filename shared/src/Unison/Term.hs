@@ -128,6 +128,7 @@ pattern Vector' xs <- (ABT.out -> ABT.Tm (Vector xs))
 pattern Distributed' r <- (ABT.out -> ABT.Tm (Distributed r))
 pattern Lam' subst <- ABT.Tm' (Lam (ABT.Abs' subst))
 pattern LamNamed' v body <- (ABT.out -> ABT.Tm (Lam (ABT.Term _ _ (ABT.Abs v body))))
+pattern LamsNamed' vs body <- (unLam -> Just (vs, body))
 pattern Let1' b subst <- (unLet1 -> Just (b, subst))
 pattern Let1Named' v b e <- (ABT.Tm' (Let b (ABT.out -> ABT.Abs v e)))
 pattern Lets' bs e <- (unLet -> Just (bs, e))
@@ -224,6 +225,12 @@ let1 bindings e = foldr f e bindings
 
 let1' :: Var v => [(Text,Term v)] -> Term v -> Term v
 let1' bs e = let1 [(ABT.v' name, b) | (name,b) <- bs ] e
+
+unLam :: Term v -> Maybe ([v], Term v)
+unLam (LamNamed' v body) = case unLam body of
+  Nothing -> Just ([v], body)
+  Just (vs, body) -> Just ((v:vs), body)
+unLam _ = Nothing
 
 unLet1 :: Var v => Term v -> Maybe (Term v, ABT.Subst (F v) v ())
 unLet1 (ABT.Tm' (Let b (ABT.Abs' subst))) = Just (b, subst)
