@@ -13,9 +13,11 @@ import Unison.Reference (Reference)
 import Unison.Runtime.Vector (Vector)
 import Unison.Term (Term)
 import Unison.Var (Var)
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Vector as DV
 import qualified Data.Vector.Mutable as MV
+import qualified Unison.ABT as ABT
 import qualified Unison.Reference as R
 import qualified Unison.Runtime.Vector as Vector
 import qualified Unison.Term as T
@@ -108,47 +110,52 @@ drop' n (Stack ir vsr null) = do
   writeIORef ir i'
 
 compile' :: Var v => (R.Reference -> Program v ()) -> Term v -> Program v ()
-compile' link t = go [] t where
-  go vs t = case t of
+compile' link t = go [] 0 t where
+  -- todo: track some additional info to handle implementation of proper tail calls
+  go vs offset t = case t of
     T.Blank' -> push (Symbol Nothing)
     T.Lit' l -> case l of
       T.Number n -> push (Number n)
       T.Text txt -> push (Text txt)
     T.Ref' r -> link r
-    T.Ann' x _ -> go vs x
+    T.Ann' x _ -> go vs offset x
     T.Var' v -> case elemIndex v vs of
-      Just i -> at i >>= push
+      Just i -> at (i+offset) >>= push
       Nothing -> push (Symbol (Just v))
     T.Vector' xs ->
-      let !xs' = fmap (\x -> go vs x >> pop) (Vector.fromList . DV.toList $ xs)
+      let !xs' = fmap (\x -> go vs offset x >> pop) (Vector.fromList . DV.toList $ xs)
       in do
         xs <- sequenceA xs'
         push $ Vector xs
     T.Let1Named' v b body -> do b'; body'; popFrame 1 where
-      !b' = go vs b
-      !body' = go (v:vs) body
+      !b' = go vs offset b
+      !body' = go (v:vs) offset body
     T.LamsNamed' args body -> push fn where
-      !body' = go (reverse args ++ vs) body
+      !body' = go (reverse args ++ vs) offset body
       !arity = length args
       !fn = Fn arity (pure (T.lam'' args body)) (pure 0) body'
     T.LetRecNamed' bs body ->
       let
         !vs' = reverse (map fst bs) ++ vs
         !n = length bs
-        !bs' = [go vs' b >> popFrame' n | (_,b) <- bs]
-        !body' = go vs' body
+        !bs' = [go vs' (offset+i) b >> top | ((_,b),i) <- bs `zip` [0..]]
+        !body' = go vs' offset body
       in mdo
-        results <- forM bs' (\b -> mapM_ push results >> b)
-        mapM_ push results
+        results <- do
+          mapM_ push results -- don't think this is productive
+          forM bs' id
         body'
         popFrame n
     -- T.Apps' (T.LamsNamed' argnames body) args -- todo: give optimized impl?
     T.Apps' f args ->
       let
-        !ef = eval vs f
-        !eargs = forM_ args (go vs)
+        !ef = eval vs offset f
+        !eargs = forM_ (args `zip` [0..]) (\(arg,i) -> go vs (offset+i) arg)
         !nargs = length args
-        dargs = DV.map (eval vs) (DV.fromList args)
+        varsToCopyFromEnv = [ v | v <- vs, Set.member v (ABT.freeVars f) ]
+        nCaptured = length varsToCopyFromEnv
+        capturedEnv = forM varsToCopyFromEnv (\v -> eval vs offset (T.var v))
+        dargs = DV.map (eval vs offset) (DV.fromList args)
         deoptimized = do f <- ef; applied <- foldM app f (DV.toList dargs); push applied where
           app (Fn arity reify env invoke) arg = arg >>= \arg ->
             if arity == 1 then do n <- env; push arg; invoke; popFrame (n+1); pop
@@ -161,22 +168,28 @@ compile' link t = go [] t where
           app _ _ = error $ "application of non-function"
       in do
         Fn arity reify env prog <- ef
+        -- 3 cases:
+        --   * fully saturated: `(x y -> x) 23 a`
+        --   * over-application: `let id x = x in id id 42`
+        --   * under-application: `let f x y z = x - y - z; g = f 12 2 in g 1` should be 9
         case nargs of
-          _ | nargs == arity -> env >>= \n -> eargs >> prog >> popFrame (nargs+n) -- fully saturated call
-            | nargs > arity -> deoptimized -- over-application, ex: id id 42
-            | otherwise -> do -- nargs < arity, under-application, need to form a closure
-                -- Example: let f x y z = x - y - z; g = f 12 2 in g 1 -- should be 9
+          _ | nargs == arity -> env >>= \n -> eargs >> prog >> popFrame (nargs+n) -- fully saturated
+            | nargs > arity -> deoptimized -- over-application, revert to passing args one at a time
+            | otherwise -> do -- nargs < arity, under-application; form a closure
                 eargs -- evaluate the args
                 env' <- reverse <$> replicateM nargs pop -- extract the environment
+                capturedEnv' <- capturedEnv
                 -- create the closure from the argument
-                push (Fn (arity-nargs) (reify2 env') ((+) <$> env <*> (nargs <$ forM_ env' push)) prog)
+                -- todo: not sure about order to push captured free variables onto env
+                let pushEnv = forM_ capturedEnv' push >> forM_ env' push >> fmap (\n -> (n+nargs+nCaptured)) env
+                push (Fn (arity-nargs) (reify2 env') pushEnv prog)
                 where
                 reify2 env' = do
                   f <- reify
                   args <- mapM decompile env'
                   pure $ T.apps f args
     _ -> error $ "don't know what to do with: " ++ show t
-  eval vs t = go vs t >> pop
+  eval vs offset t = go vs offset t >> pop
 
 decompile :: Ord v => Val v -> Program v (T.Term v)
 decompile val = case val of
