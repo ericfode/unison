@@ -22,6 +22,22 @@ import qualified Unison.Reference as R
 import qualified Unison.Runtime.Vector as Vector
 import qualified Unison.Term as T
 
+{-
+This module has a simple, efficient interpreter of Unison terms.
+Terms are compiled to a single IO action which manipulates a mutable stack of values.
+
+Some things to still be done:
+
+* Under-application not handled correctly. Under-application requires forming
+  a closure, which copies data from the environment. When the closure is called (with
+  subsequent arguments), we need to resurrect this environment such that variable
+  references are correct. Not totally clear on how to do this exactly.
+    * Might need to add some extra runtime state - a closure environment stack that
+      closures can push to, perhaps?
+* Implementation of let rec is not productive, need to do something a bit fancier here
+* Implementation of `reflect` needs more thought. Unclear whether it's possible in general.
+-}
+
 data Val v
   = Number !Double
   | Text !Text.Text
