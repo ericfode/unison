@@ -12,3 +12,4 @@ RUN stack --stack-yaml editor.yaml build
 RUN ln -s $(stack --stack-yaml editor.yaml path --local-install-root)/bin editor
 CMD stack exec container
 EXPOSE 8080
+EXPOSE 8081
