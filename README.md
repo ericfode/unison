@@ -80,7 +80,7 @@ $ ln -s $(stack --stack-yaml editor.yaml path --local-install-root)/bin editor
 You can run it by doing:
 
 ```sh
-$ stack exec node
+$ stack exec container
 Setting phasers to stun... (port 8080) (ctrl-c to quit)
 ```
 
