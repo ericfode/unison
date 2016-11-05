@@ -10,5 +10,5 @@ RUN stack build unison-node
 RUN stack --stack-yaml editor.yaml setup
 RUN stack --stack-yaml editor.yaml build
 RUN ln -s $(stack --stack-yaml editor.yaml path --local-install-root)/bin editor
-CMD stack exec node
+CMD stack exec container
 EXPOSE 8080
