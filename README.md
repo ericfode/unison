@@ -53,7 +53,9 @@ Building using Stack
 If these instructions don't work for you or are incomplete, please file an issue.
 Also, have a look at the Dockerfile if you are unsure about the steps to perform.
 
-The build uses [Stack](http://docs.haskellstack.org/). If you don't already have it installed, version 1.0.2 or later, [follow the install instructions](http://docs.haskellstack.org/en/stable/README.html#how-to-install) for your platform. Once that's done and the `stack` executable is on your path, do:
+The build uses [Stack](http://docs.haskellstack.org/). If you don't already have it installed, version 1.0.2 or later, [follow the install instructions](http://docs.haskellstack.org/en/stable/README.html#how-to-install) for your platform.
+
+This build also uses node. You will need to make sure you have a version of node on your machine that works with GHCJS. This build has been tested with v0.10.\*. Once that's done and the `stack` and the `node` executable is on your path, do:
 
 ```sh
 $ git clone https://github.com/unisonweb/unison.git
@@ -154,3 +156,15 @@ At least one user has reported problems when building the editor on a machine ru
     ```sh
     $ sudo apt-get install happy
     ```
+1. If you get an error that contains:
+    ```sh
+    exit status: 1
+stderr: Warning: No remote package servers have been specified. Usually you would have
+one specified in the config file.
+setup: dist/: does not exist
+cabal: Error: some packages failed to install:
+Cabal-1.22.4.0 failed during the configure step. The exception was:
+ExitFailure 1
+    ```
+    Your GHCJS environment is broken. Make sure that you don't have cabal-install installed outside of stack (for example using brew). Make sure that your environment has a version of node that is compatible with GHCJS (v.0.10.*).
+    
